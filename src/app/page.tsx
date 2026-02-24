@@ -6,7 +6,6 @@ import SlideEditor from "@/components/SlideEditor";
 import { renderAllSlides } from "@/lib/canvas-renderer";
 import { createDefaultSlides, type SlideConfig } from "@/lib/types";
 
-type Mode = "canvas" | "gemini";
 
 function UploadZone({
   image,
@@ -102,14 +101,13 @@ function UploadZone({
 
 export default function ScuffersGenerator() {
   const [modelImage, setModelImage] = useState<string | null>(null);
-  const [styleImage, setStyleImage] = useState<string | null>(null);
+
   const [slideConfigs, setSlideConfigs] = useState<SlideConfig[]>(
     createDefaultSlides()
   );
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<Mode>("canvas");
   const [activeSlide, setActiveSlide] = useState(0);
 
   const updateSlide = useCallback(
@@ -164,25 +162,8 @@ export default function ScuffersGenerator() {
     setError(null);
 
     try {
-      if (mode === "canvas") {
-        const images = await renderAllSlides(modelImage, slideConfigs);
-        setGeneratedImages(images);
-      } else {
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            modelImage,
-            styleImage,
-            slides: slideConfigs.map((s) =>
-              s.texts.map((t) => t.content).join("\n")
-            ),
-          }),
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error);
-        setGeneratedImages(data.images);
-      }
+      const images = await renderAllSlides(modelImage, slideConfigs);
+      setGeneratedImages(images);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error generating images");
     } finally {
@@ -228,32 +209,9 @@ export default function ScuffersGenerator() {
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            {/* Mode toggle */}
-            <div className="flex bg-zinc-900 rounded-lg p-0.5 border border-zinc-800">
-              <button
-                type="button"
-                onClick={() => setMode("canvas")}
-                className={`text-xs px-3 py-1 rounded-md transition-all ${
-                  mode === "canvas"
-                    ? "bg-white text-black font-medium"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                Canvas
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode("gemini")}
-                className={`text-xs px-3 py-1 rounded-md transition-all ${
-                  mode === "gemini"
-                    ? "bg-emerald-600 text-white font-medium"
-                    : "text-zinc-400 hover:text-white"
-                }`}
-              >
-                Gemini AI
-              </button>
-            </div>
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <div className="w-2 h-2 bg-emerald-500 rounded-full" />
+            Canvas mode
           </div>
         </div>
       </header>
@@ -284,21 +242,8 @@ export default function ScuffersGenerator() {
               </button>
             )}
 
-            {mode === "gemini" && (
-              <>
-                <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wider pt-2">
-                  Referencia estilo
-                </h2>
-                <UploadZone
-                  image={styleImage}
-                  onImage={setStyleImage}
-                  label="PSD / ejemplo (opcional)"
-                  sublabel="Para Gemini AI"
-                />
-              </>
-            )}
 
-            <button
+<button
               type="button"
               onClick={generate}
               disabled={!modelImage || isLoading}
