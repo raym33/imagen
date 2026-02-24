@@ -21,6 +21,11 @@ const PRESET_COLORS = [
   "#a855f7",
 ];
 
+type DragTarget =
+  | { type: "text"; id: string }
+  | { type: "logo" }
+  | null;
+
 export default function SlideEditor({
   photoUrl,
   config,
@@ -28,7 +33,7 @@ export default function SlideEditor({
   slideIndex,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dragging, setDragging] = useState<string | null>(null);
+  const [dragTarget, setDragTarget] = useState<DragTarget>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
   const selectedText = config.texts.find((t) => t.id === selectedId) || null;
@@ -41,6 +46,14 @@ export default function SlideEditor({
           t.id === id ? { ...t, ...updates } : t
         ),
       });
+    },
+    [config, onChange]
+  );
+
+  const updateLogo = useCallback(
+    (updates: Partial<NonNullable<LogoConfig>>) => {
+      if (!config.logo) return;
+      onChange({ ...config, logo: { ...config.logo, ...updates } });
     },
     [config, onChange]
   );
@@ -67,24 +80,48 @@ export default function SlideEditor({
     if (selectedId === id) setSelectedId(null);
   };
 
-  const handlePointerDown = (id: string, e: React.PointerEvent) => {
+  // --- Drag handlers for texts ---
+  const handleTextPointerDown = (id: string, e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setSelectedId(id);
-    setDragging(id);
+    setDragTarget({ type: "text", id });
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
+  // --- Drag handlers for logo ---
+  const handleLogoPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedId(null); // deselect text when dragging logo
+    setDragTarget({ type: "logo" });
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  // --- Shared move/up on the preview container ---
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!dragging || !previewRef.current) return;
+    if (!dragTarget || !previewRef.current) return;
     const rect = previewRef.current.getBoundingClientRect();
     const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
     const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-    updateText(dragging, { x, y });
+
+    if (dragTarget.type === "text") {
+      updateText(dragTarget.id, { x, y });
+    } else if (dragTarget.type === "logo") {
+      updateLogo({ x, y });
+    }
   };
 
   const handlePointerUp = () => {
-    setDragging(null);
+    setDragTarget(null);
+  };
+
+  // --- Deselect only when clicking empty area (not when clicking text/logo) ---
+  const handleBackgroundClick = (e: React.MouseEvent) => {
+    // Only deselect if the click target is the background itself, not a child element
+    if (e.target === e.currentTarget || (e.target as HTMLElement).dataset.bg === "true") {
+      setSelectedId(null);
+    }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -116,29 +153,37 @@ export default function SlideEditor({
         className="relative aspect-square bg-zinc-900 rounded-xl overflow-hidden select-none"
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onClick={() => setSelectedId(null)}
+        onClick={handleBackgroundClick}
       >
         {/* Photo */}
         <img
           src={photoUrl}
           alt="base"
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
           draggable={false}
         />
 
-        {/* Overlay */}
+        {/* Overlay - clicks pass through to background */}
         <div
-          className="absolute inset-0"
+          className="absolute inset-0 pointer-events-none"
           style={{
             backgroundColor: config.overlayColor,
             opacity: config.overlayOpacity,
           }}
         />
 
-        {/* Logo */}
+        {/* Transparent click catcher for deselect */}
+        <div className="absolute inset-0" data-bg="true" />
+
+        {/* Logo (draggable) */}
         {config.logo && (
           <div
-            className="absolute cursor-move"
+            onPointerDown={handleLogoPointerDown}
+            className={`absolute cursor-move touch-none ${
+              dragTarget?.type === "logo"
+                ? "outline outline-2 outline-emerald-500 outline-offset-2 rounded"
+                : ""
+            }`}
             style={{
               left: `${config.logo.x}%`,
               top: `${config.logo.y}%`,
@@ -154,12 +199,12 @@ export default function SlideEditor({
           </div>
         )}
 
-        {/* Text elements */}
+        {/* Text elements (draggable) */}
         {config.texts.map((t) => (
           <div
             key={t.id}
-            onPointerDown={(e) => handlePointerDown(t.id, e)}
-            className={`absolute cursor-move whitespace-nowrap ${
+            onPointerDown={(e) => handleTextPointerDown(t.id, e)}
+            className={`absolute cursor-move whitespace-nowrap touch-none ${
               selectedId === t.id
                 ? "outline outline-2 outline-blue-500 outline-offset-4 rounded"
                 : ""
@@ -183,7 +228,6 @@ export default function SlideEditor({
               fontFamily:
                 '"Helvetica Neue", Helvetica, Arial, sans-serif',
               userSelect: "none",
-              touchAction: "none",
             }}
           >
             {t.content}
@@ -191,7 +235,7 @@ export default function SlideEditor({
         ))}
 
         {/* Slide number badge */}
-        <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-full">
+        <div className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-2 py-0.5 rounded-full pointer-events-none">
           {slideIndex + 1}
         </div>
       </div>
